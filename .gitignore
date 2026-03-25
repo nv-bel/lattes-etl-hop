@@ -1,0 +1,18 @@
+# Docker
+docker-compose.override.yml
+
+# Power BI temporários
+*.pbix.lock
+
+# pgAdmin
+*.pgpass
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor
+.vscode/
+.idea/
+*.swp
