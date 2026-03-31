@@ -6,16 +6,18 @@ Pipeline de dados para extração, transformação e carga (ETL) de Currículos 
 
 ```
 lattes-etl-hop/
+├── busca-semantica-fts/
+│   ├── fts_lattes.sql      # Scripts SQL para busca semântica
 ├── data/
-│   ├── bronze/          # Arquivos XML brutos do Lattes
-│   └── silver/          # Dados processados (Parquet)
+│   ├── bronze/             # Arquivos XML brutos do Lattes
+│   └── silver/             # Dados processados (Parquet)
 ├── utils/
-│   ├── query_sql/       # Scripts SQL
+│   ├── query_sql/          # Scripts SQL
 │   └── Treinamento_HOP_Final.pdf
-├── hop/                 # Pipelines e workflows do Apache HOP
-├── power_bi/            # Dashboard Power BI
-├── dockerfile           # Imagem Docker do PostgreSQL
-└── init_db.sh           # Script de inicialização do banco
+├── hop/                    # Pipelines e workflows do Apache HOP
+├── power_bi/               # Dashboard Power BI
+├── dockerfile              # Imagem Docker do PostgreSQL
+└── init_db.sh              # Script de inicialização do banco de dados
 ```
 
 ## Pré-requisitos
@@ -103,4 +105,44 @@ Dashboard interativo no Power BI conectado diretamente ao PostgreSQL, com filtro
 
 Pesquisadores analisados: **Hugo Saba Pereira Cardoso** (51,72%) e **Eduardo Manuel de Freitas Jorge** (48,28%).
 
-![Tela do Dashboard](power_bi/tela_bi.png) 
+![Tela do Dashboard](power_bi/tela_bi.png)
+
+## Busca Semântica Textual (Full Text Search)
+
+O script `busca-semantica-lattes/fts_lattes.sql` implementa busca textual completa sobre as tabelas `pesquisadores` e `producoes` usando os recursos nativos de Full Text Search do PostgreSQL.
+
+Baseado no tutorial [PostgreSQL Full Text Search](https://www.infoq.com/br/articles/postgresql-fts/), o script cobre:
+
+| Seção | Recurso |
+|-------|---------|
+| 1 | Construção de documentos com `to_tsvector()` |
+| 2 | Consultas com `to_tsquery()` e operadores `&`, `\|`, `!`, `:*` |
+| 3 | Suporte a idiomas (`english`, `portuguese`, `simple`) |
+| 4 | Acentuação com extensão `unaccent` e configuração personalizada `pt` |
+| 5 | Ranking de relevância com `setweight()` e `ts_rank()` |
+| 6 | Indexação com `GIN`, `MATERIALIZED VIEW` e `REFRESH` |
+| 7 | Correção ortográfica com extensão `pg_trgm` e função `similarity()` |
+
+Como o corpus tem títulos em **inglês e português misturados**, a configuração `'simple'` é usada como padrão — sem stemming, compatível com qualquer idioma.
+
+### Exemplos de busca
+
+```sql
+-- Buscar produções que contenham "dengue" E "fever"
+SELECT producoes_id, titulo_artigo, nome_pesquisador
+FROM mv_indice_busca
+WHERE documento @@ to_tsquery('simple', 'dengue & fever')
+ORDER BY ts_rank(documento, to_tsquery('simple', 'dengue & fever')) DESC;
+
+-- Busca tolerante a erros ortográficos: 'dngue' → 'dengue'
+WITH termo_corrigido AS (
+    SELECT word AS termo
+    FROM mv_lexemas_unicos
+    WHERE similarity(word, 'dngue') > 0.3
+    ORDER BY word <-> 'dngue'
+    LIMIT 1
+)
+SELECT mv.titulo_artigo, mv.nome_pesquisador
+FROM mv_indice_busca mv, termo_corrigido tc
+WHERE mv.documento @@ to_tsquery('simple', tc.termo);
+``` 
